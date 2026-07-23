@@ -5,6 +5,11 @@ const orderCtrl = require('../controllers/orderController');
 
 router.use(protect, allowRoles('restaurant'), blockIfMustChangePassword);
 
+router.get('/profile', ctrl.getProfile);
+router.patch('/profile', ctrl.updateProfile);
+router.post('/gallery', ctrl.addGalleryImage);
+router.delete('/gallery/:publicId', ctrl.deleteGalleryImage);
+
 router.post('/categories', ctrl.addCategory);
 router.get('/categories', ctrl.listCategories);
 router.post('/foods', ctrl.addFood);

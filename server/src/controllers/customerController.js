@@ -20,7 +20,7 @@ const listRestaurants = asyncHandler(async (req, res) => {
 // GET /api/public/restaurants/:id
 const getRestaurant = asyncHandler(async (req, res) => {
   const restaurant = await Restaurant.findById(req.params.id).select(
-    'name description logoUrl coverImageUrl avgRating ratingCount cuisineTags address city isOpen'
+    'name description logoUrl coverImageUrl galleryImages lat lng avgRating ratingCount cuisineTags address city isOpen'
   );
   if (!restaurant) {
     res.status(404);

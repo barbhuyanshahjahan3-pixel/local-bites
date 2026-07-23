@@ -3,10 +3,12 @@ import { useAuth } from '../context/AuthContext';
 import OrdersTab from './tabs/OrdersTab';
 import MenuTab from './tabs/MenuTab';
 import ReportsTab from './tabs/ReportsTab';
+import ProfileTab from './tabs/ProfileTab';
 
 const TABS = [
   { id: 'orders', label: 'Orders', Component: OrdersTab },
   { id: 'menu', label: 'Menu', Component: MenuTab },
+  { id: 'profile', label: 'Profile & Gallery', Component: ProfileTab },
   { id: 'reports', label: 'Reports', Component: ReportsTab },
 ] as const;
 

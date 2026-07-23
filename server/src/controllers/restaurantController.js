@@ -1,7 +1,54 @@
 const asyncHandler = require('express-async-handler');
 const { Category, Food } = require('../models/Food');
 const { Order } = require('../models/Order');
+const Restaurant = require('../models/Restaurant');
 const { uploadImage, deleteImage } = require('../config/cloudinary');
+
+// GET /api/restaurant/profile
+const getProfile = asyncHandler(async (req, res) => {
+  const restaurant = await Restaurant.findById(req.user.id).select('-passwordHash');
+  res.json({ success: true, restaurant });
+});
+
+// PATCH /api/restaurant/profile  { name?, description?, address?, lat?, lng?, cuisineTags? }
+const updateProfile = asyncHandler(async (req, res) => {
+  const { name, description, address, lat, lng, cuisineTags } = req.body;
+  const restaurant = await Restaurant.findById(req.user.id);
+  if (name !== undefined) restaurant.name = name;
+  if (description !== undefined) restaurant.description = description;
+  if (address !== undefined) restaurant.address = address;
+  if (lat !== undefined) restaurant.lat = lat;
+  if (lng !== undefined) restaurant.lng = lng;
+  if (cuisineTags !== undefined) restaurant.cuisineTags = cuisineTags;
+  await restaurant.save();
+  res.json({ success: true, restaurant });
+});
+
+// POST /api/restaurant/gallery  { imageBase64 }
+const addGalleryImage = asyncHandler(async (req, res) => {
+  const { imageBase64 } = req.body;
+  if (!imageBase64) {
+    res.status(400);
+    throw new Error('No image provided');
+  }
+  const uploaded = await uploadImage(imageBase64, 'local-bites/restaurant-gallery');
+  const restaurant = await Restaurant.findById(req.user.id);
+  restaurant.galleryImages.push({ url: uploaded.url, publicId: uploaded.publicId });
+  await restaurant.save();
+  res.json({ success: true, galleryImages: restaurant.galleryImages });
+});
+
+// DELETE /api/restaurant/gallery/:publicId
+const deleteGalleryImage = asyncHandler(async (req, res) => {
+  const restaurant = await Restaurant.findById(req.user.id);
+  const image = restaurant.galleryImages.find((g) => g.publicId === req.params.publicId);
+  if (image) {
+    await deleteImage(image.publicId).catch(() => {}); // best-effort cleanup on Cloudinary
+    restaurant.galleryImages = restaurant.galleryImages.filter((g) => g.publicId !== req.params.publicId);
+    await restaurant.save();
+  }
+  res.json({ success: true, galleryImages: restaurant.galleryImages });
+});
 
 // GET /api/restaurant/categories
 const listCategories = asyncHandler(async (req, res) => {
@@ -105,4 +152,16 @@ const salesReport = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { addCategory, listCategories, addFood, listFoods, editFood, deleteFood, salesReport };
+module.exports = {
+  getProfile,
+  updateProfile,
+  addGalleryImage,
+  deleteGalleryImage,
+  addCategory,
+  listCategories,
+  addFood,
+  listFoods,
+  editFood,
+  deleteFood,
+  salesReport,
+};

@@ -26,16 +26,10 @@ const placeOrder = asyncHandler(async (req, res) => {
   }
 
   const { Food } = require('../models/Food');
-  // Fetch all foods in the cart in a single query instead of one query per line item
-  // (avoids N+1 round-trips to the database, which matters a lot under concurrent load).
-  const foodIds = items.map((line) => line.foodId);
-  const foods = await Food.find({ _id: { $in: foodIds } });
-  const foodById = new Map(foods.map((f) => [String(f._id), f]));
-
   let itemsTotal = 0;
   const orderItems = [];
   for (const line of items) {
-    const food = foodById.get(String(line.foodId));
+    const food = await Food.findById(line.foodId);
     if (!food || !food.isAvailable) continue;
     const unitPrice = food.offerPrice ?? food.price;
     itemsTotal += unitPrice * line.quantity;

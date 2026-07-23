@@ -59,6 +59,41 @@ export default function RestaurantPage({
         {!restaurant.isOpen && <p className="text-xs text-red-400 mt-1">Currently closed</p>}
       </div>
 
+      {restaurant.galleryImages && restaurant.galleryImages.length > 0 && (
+        <div className="px-4 pb-4">
+          <h2 className="font-semibold text-white mb-2">Gallery</h2>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {restaurant.galleryImages.map((img) => (
+              <img
+                key={img.publicId}
+                src={img.url}
+                alt={restaurant.name}
+                className="h-28 w-28 rounded-lg object-cover shrink-0"
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {restaurant.lat != null && restaurant.lng != null && (
+        <div className="px-4 pb-4">
+          <h2 className="font-semibold text-white mb-2">Location</h2>
+          <iframe
+            title="Restaurant location"
+            src={`https://www.openstreetmap.org/export/embed.html?bbox=${restaurant.lng - 0.01}%2C${restaurant.lat - 0.01}%2C${restaurant.lng + 0.01}%2C${restaurant.lat + 0.01}&layer=mapnik&marker=${restaurant.lat}%2C${restaurant.lng}`}
+            className="w-full h-40 rounded-lg border border-slate-800"
+          />
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${restaurant.lat},${restaurant.lng}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-block mt-2 text-sm text-brand"
+          >
+            Get directions →
+          </a>
+        </div>
+      )}
+
       <div className="px-4 space-y-6">
         {Object.entries(grouped).map(([category, items]) => (
           <section key={category}>

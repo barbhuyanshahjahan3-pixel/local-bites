@@ -40,6 +40,9 @@ export interface RestaurantDetail {
   description?: string;
   logoUrl?: string;
   coverImageUrl?: string;
+  galleryImages?: { url: string; publicId: string }[];
+  lat?: number;
+  lng?: number;
   avgRating: number;
   ratingCount: number;
   cuisineTags: string[];
