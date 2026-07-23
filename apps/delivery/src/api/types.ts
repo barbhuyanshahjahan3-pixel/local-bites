@@ -10,6 +10,8 @@ export interface AssignedOrder {
   grandTotal: number;
   paymentMethod: 'cod' | 'online';
   paymentStatus: string;
+  codRemainingAmount: number;
+  codCollected: boolean;
   customerName: string;
   customerMobile: string;
   deliveryAddress: string;

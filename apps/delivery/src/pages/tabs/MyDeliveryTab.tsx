@@ -23,9 +23,19 @@ export default function MyDeliveryTab({ refreshKey }: { refreshKey: number }) {
     if (!order) return;
     const step = STEP_ACTIONS[order.status];
     if (!step) return;
+
+    const body: { action: string; cashCollected?: boolean } = { action: step.action };
+    if (step.action === 'delivered' && order.codRemainingAmount > 0) {
+      const confirmed = confirm(
+        `Confirm you have collected ₹${order.codRemainingAmount} cash from the customer.`
+      );
+      if (!confirmed) return;
+      body.cashCollected = true;
+    }
+
     setLoading(true);
     try {
-      await api.patch(`/api/delivery/orders/${order._id}/status`, { action: step.action });
+      await api.patch(`/api/delivery/orders/${order._id}/status`, body);
       await load();
     } finally {
       setLoading(false);
@@ -78,6 +88,11 @@ export default function MyDeliveryTab({ refreshKey }: { refreshKey: number }) {
         <p className="text-sm text-slate-300">
           Total ₹{order.grandTotal} · {order.paymentMethod.toUpperCase()} · {order.paymentStatus}
         </p>
+        {order.codRemainingAmount > 0 && (
+          <p className="text-sm font-semibold text-amber-400">
+            Collect ₹{order.codRemainingAmount} cash on delivery
+          </p>
+        )}
 
         <div className="flex gap-2 pt-2">
           {step && (

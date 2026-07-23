@@ -78,7 +78,7 @@ const myActiveOrder = asyncHandler(async (req, res) => {
     deliveryPartner: req.user.id,
     status: { $in: ['delivery_accepted', 'picked_up', 'on_the_way'] },
   }).select(
-    'orderNumber items grandTotal paymentMethod paymentStatus customerName customerMobile deliveryAddress deliveryLat deliveryLng status deliveryPartner'
+    'orderNumber items grandTotal paymentMethod paymentStatus codRemainingAmount codCollected customerName customerMobile deliveryAddress deliveryLat deliveryLng status deliveryPartner'
   );
   res.json({ success: true, order: order || null });
 });

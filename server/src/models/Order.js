@@ -51,10 +51,24 @@ const orderSchema = new mongoose.Schema(
     platformCommission: { type: Number, required: true }, // computed at order time, restaurant payout basis
     grandTotal: { type: Number, required: true },
 
+    // 'cod'    = 50% paid online now (advance), 50% collected as cash on delivery
+    // 'online' = 100% paid online now, nothing collected on delivery
     paymentMethod: { type: String, enum: ['cod', 'online'], required: true },
-    paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending' },
+    paymentStatus: {
+      type: String,
+      enum: ['pending', 'advance_paid', 'paid', 'failed', 'refunded'],
+      default: 'pending',
+    },
+    advanceAmount: { type: Number, required: true }, // amount required online at checkout
+    codRemainingAmount: { type: Number, default: 0 }, // amount to collect as cash on delivery (0 for 'online')
+    codCollected: { type: Boolean, default: false }, // delivery partner confirms cash received
     razorpayOrderId: String,
     razorpayPaymentId: String,
+    // The advance is non-refundable if the CUSTOMER cancels. It IS refunded if the
+    // restaurant rejects/cancels the order — that's not the customer's fault.
+    refunded: { type: Boolean, default: false },
+    refundId: String,
+    refundedAt: Date,
 
     // Checkout-collected info. Restaurant does NOT get address/mobile — only the
     // delivery partner does, once assigned (see privacy note in orderController).

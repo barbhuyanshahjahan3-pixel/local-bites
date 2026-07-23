@@ -8,6 +8,7 @@ router.use(protect, allowRoles('customer'));
 router.post('/orders', orderCtrl.placeOrder);
 router.get('/orders/mine', orderCtrl.getMyOrders);
 router.get('/orders/mine/:id', orderCtrl.getMyOrderDetail);
+router.patch('/orders/:id/cancel', orderCtrl.cancelOrder);
 
 router.post('/wishlist/:foodId', ctrl.toggleWishlist);
 router.get('/wishlist', ctrl.getWishlist);

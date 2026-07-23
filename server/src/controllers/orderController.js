@@ -53,6 +53,12 @@ const placeOrder = asyncHandler(async (req, res) => {
 
   const orderNumber = await nextOrderNumber(restaurant.city.name.slice(0, 2).toUpperCase());
 
+  // 'online' method = pay the full amount now. 'cod' method = pay 50% now as a
+  // non-refundable-if-customer-cancels advance, rest as cash on delivery.
+  const advanceAmount =
+    paymentMethod === 'online' ? grandTotal : Math.round(grandTotal / 2);
+  const codRemainingAmount = grandTotal - advanceAmount;
+
   const order = await Order.create({
     orderNumber,
     customer: req.user.id,
@@ -64,6 +70,8 @@ const placeOrder = asyncHandler(async (req, res) => {
     platformCommission,
     grandTotal,
     paymentMethod,
+    advanceAmount,
+    codRemainingAmount,
     customerName: name,
     customerMobile: mobile,
     deliveryAddress,
@@ -73,23 +81,17 @@ const placeOrder = asyncHandler(async (req, res) => {
     statusHistory: [{ status: 'placed', by: 'customer' }],
   });
 
-  let razorpayOrder = null;
-  if (paymentMethod === 'online') {
-    razorpayOrder = await razorpay.orders.create({
-      amount: grandTotal * 100, // paise
-      currency: 'INR',
-      receipt: orderNumber,
-    });
-    order.razorpayOrderId = razorpayOrder.id;
-    await order.save();
-  }
-
-  // Restaurant only ever sees what it needs to prepare the order — not the address/mobile.
-  emitToRestaurant(restaurant._id.toString(), 'new_order', {
-    orderId: order._id,
-    orderNumber,
-    items: orderItems,
+  // Every order now requires an online payment (full amount, or the 50% advance)
+  // before the restaurant ever sees it. We create the Razorpay order here, but the
+  // restaurant is only notified once /api/payments/verify confirms the payment —
+  // see paymentRoutes.js. This is what makes an unpaid order "not accepted".
+  const razorpayOrder = await razorpay.orders.create({
+    amount: advanceAmount * 100, // paise
+    currency: 'INR',
+    receipt: orderNumber,
   });
+  order.razorpayOrderId = razorpayOrder.id;
+  await order.save();
 
   res.status(201).json({
     success: true,
@@ -124,6 +126,16 @@ const updateRestaurantStatus = asyncHandler(async (req, res) => {
   if (newStatus === 'restaurant_rejected') {
     order.rejectedBy = 'restaurant';
     order.rejectionReason = req.body.reason;
+    // Not the customer's fault — refund whatever was paid online.
+    if (!order.refunded && order.razorpayPaymentId && ['advance_paid', 'paid'].includes(order.paymentStatus)) {
+      const refund = await razorpay.payments.refund(order.razorpayPaymentId, {
+        amount: order.advanceAmount * 100,
+      });
+      order.refunded = true;
+      order.refundId = refund.id;
+      order.refundedAt = new Date();
+      order.paymentStatus = 'refunded';
+    }
   }
   await order.save();
 
@@ -180,8 +192,17 @@ const updateDeliveryStatus = asyncHandler(async (req, res) => {
     order.status = map[action];
     order.statusHistory.push({ status: order.status, by: `delivery_partner:${req.user.id}` });
     if (action === 'delivered') {
+      // For COD orders, the delivery partner must confirm the remaining cash was
+      // actually collected before the order can be marked delivered.
+      if (order.paymentMethod === 'cod' && order.codRemainingAmount > 0 && !req.body.cashCollected) {
+        res.status(400);
+        throw new Error('Confirm cash collected before marking as delivered');
+      }
       order.deliveredAt = new Date();
-      if (order.paymentMethod === 'cod') order.paymentStatus = 'paid';
+      if (order.paymentMethod === 'cod') {
+        order.codCollected = true;
+        order.paymentStatus = 'paid'; // advance + cash both now settled
+      }
 
       const DeliveryPartner = require('../models/DeliveryPartner');
       await DeliveryPartner.findByIdAndUpdate(req.user.id, {
@@ -198,10 +219,35 @@ const updateDeliveryStatus = asyncHandler(async (req, res) => {
   res.json({ success: true, order });
 });
 
+// PATCH /api/orders/:id/cancel (customer) — allowed only before the restaurant starts
+// preparing. The advance is deliberately NOT refunded here — that's the whole point
+// of taking it upfront. Refunds only happen if the RESTAURANT rejects the order
+// (see updateRestaurantStatus above).
+const cancelOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findOne({ _id: req.params.id, customer: req.user.id });
+  if (!order) {
+    res.status(404);
+    throw new Error('Order not found');
+  }
+  if (!['placed', 'restaurant_accepted'].includes(order.status)) {
+    res.status(400);
+    throw new Error('This order can no longer be cancelled');
+  }
+
+  order.status = 'cancelled';
+  order.rejectedBy = 'customer';
+  order.rejectionReason = req.body.reason || 'Cancelled by customer';
+  order.statusHistory.push({ status: 'cancelled', by: 'customer', note: order.rejectionReason });
+  await order.save();
+
+  emitToRestaurant(order.restaurant.toString(), 'order_status', { orderId: order._id, status: 'cancelled' });
+  res.json({ success: true, order });
+});
+
 // GET /api/orders/:id/for-delivery-partner  — only the assigned partner sees customer contact/address
 const getOrderForDeliveryPartner = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id).select(
-    'orderNumber items grandTotal paymentMethod paymentStatus customerName customerMobile deliveryAddress deliveryLat deliveryLng status deliveryPartner'
+    'orderNumber items grandTotal paymentMethod paymentStatus codRemainingAmount codCollected customerName customerMobile deliveryAddress deliveryLat deliveryLng status deliveryPartner'
   );
   if (!order || String(order.deliveryPartner) !== req.user.id) {
     res.status(403);
@@ -229,9 +275,15 @@ const getMyOrders = asyncHandler(async (req, res) => {
   res.json({ success: true, orders });
 });
 
-// GET /api/orders/restaurant (restaurant) — deliberately excludes customer mobile/address
+// GET /api/orders/restaurant (restaurant) — deliberately excludes customer mobile/address.
+// Unpaid orders (paymentStatus 'pending' or 'failed') never reached checkout completion,
+// so the restaurant shouldn't see them at all — only orders where the required online
+// payment (advance or full) has actually cleared.
 const getRestaurantOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.find({ restaurant: req.user.id })
+  const orders = await Order.find({
+    restaurant: req.user.id,
+    paymentStatus: { $in: ['advance_paid', 'paid', 'refunded'] },
+  })
     .select('-customerMobile -deliveryAddress -deliveryLat -deliveryLng')
     .sort({ createdAt: -1 });
   res.json({ success: true, orders });
@@ -241,6 +293,7 @@ module.exports = {
   placeOrder,
   updateRestaurantStatus,
   updateDeliveryStatus,
+  cancelOrder,
   getOrderForDeliveryPartner,
   getMyOrders,
   getMyOrderDetail,

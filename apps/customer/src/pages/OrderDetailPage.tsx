@@ -17,12 +17,17 @@ interface OrderFull {
   itemsTotal: number;
   deliveryCharge: number;
   grandTotal: number;
+  advanceAmount: number;
+  codRemainingAmount: number;
+  codCollected: boolean;
   paymentMethod: string;
   paymentStatus: string;
   status: string;
   statusHistory: StatusEvent[];
   restaurant: { _id: string; name: string };
 }
+
+const CANCELLABLE_STATUSES = ['placed', 'restaurant_accepted'];
 
 const STATUS_LABEL: Record<string, string> = {
   placed: 'Order placed',
@@ -43,6 +48,8 @@ export default function OrderDetailPage({ orderId }: { orderId: string; onNaviga
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [reviewSent, setReviewSent] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
 
   const load = () =>
     api.get<{ order: OrderFull }>(`/api/customer/orders/mine/${orderId}`).then((r) => setOrder(r.order));
@@ -64,6 +71,24 @@ export default function OrderDetailPage({ orderId }: { orderId: string; onNaviga
       comment,
     });
     setReviewSent(true);
+  };
+
+  const cancelOrder = async () => {
+    if (!order) return;
+    const confirmed = window.confirm(
+      `Cancel this order? The Rs.${order.advanceAmount} you already paid online will NOT be refunded.`
+    );
+    if (!confirmed) return;
+    setCancelling(true);
+    setCancelError('');
+    try {
+      await api.patch(`/api/customer/orders/${order._id}/cancel`, {});
+      load();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Could not cancel order');
+    } finally {
+      setCancelling(false);
+    }
   };
 
   if (!order) return <p className="px-4 py-6 text-sm text-slate-500">Loading…</p>;
@@ -99,10 +124,37 @@ export default function OrderDetailPage({ orderId }: { orderId: string; onNaviga
           <p>Delivery: ₹{order.deliveryCharge}</p>
           <p className="font-semibold text-white">Total: ₹{order.grandTotal}</p>
         </div>
-        <p className="text-xs text-slate-500 mt-1">
-          {order.paymentMethod.toUpperCase()} · {order.paymentStatus}
-        </p>
+        <div className="border-t border-slate-800 mt-2 pt-2 text-sm space-y-1">
+          <p className="text-slate-300">
+            Paid online: ₹{order.advanceAmount}{' '}
+            <span className="text-xs text-slate-500">({order.paymentStatus})</span>
+          </p>
+          {order.codRemainingAmount > 0 && (
+            <p className="text-slate-300">
+              Cash on delivery: ₹{order.codRemainingAmount}{' '}
+              <span className="text-xs text-slate-500">
+                ({order.codCollected ? 'collected' : 'due at delivery'})
+              </span>
+            </p>
+          )}
+        </div>
       </div>
+
+      {CANCELLABLE_STATUSES.includes(order.status) && (
+        <div className="card space-y-2">
+          {cancelError && <p className="text-sm text-red-400">{cancelError}</p>}
+          <button
+            className="w-full rounded-lg border border-red-500/40 text-red-400 py-2 text-sm font-medium disabled:opacity-50"
+            disabled={cancelling}
+            onClick={cancelOrder}
+          >
+            {cancelling ? 'Cancelling…' : 'Cancel order'}
+          </button>
+          <p className="text-xs text-slate-500">
+            The ₹{order.advanceAmount} already paid online will not be refunded.
+          </p>
+        </div>
+      )}
 
       {order.status === 'delivered' && !reviewSent && (
         <div className="card space-y-2">
